@@ -56,6 +56,21 @@ docker compose build --no-cache
 - Web「设置」页保存的 TMDB Key、代理、刮削速率、自动刮削、NFO 开关会持久化到 `data/emby.db`，优先级高于环境变量；
 - 修改 Web 设置后新任务立即生效，正在运行的任务沿用旧配置。
 
+## 字幕
+
+- 支持与 `.strm` 同目录的外挂字幕：`.srt`、`.ass`、`.vtt`；
+- 也支持 `影片.zh.srt`、`影片.chs.srt`、`影片.en.srt` 等语言后缀；
+- 内嵌字幕通过 `ffprobe` 探测并作为标准 `MediaStream` 下发，交给支持内嵌轨道的播放器直接读取；
+- Docker 镜像已包含 `ffmpeg/ffprobe`。
+
+bridge 网络下如果 `.strm` 使用 `127.0.0.1` 指向宿主机服务，请在 `.env` 设置：
+
+```text
+UPSTREAM_HOST=host.docker.internal
+```
+
+并保留 compose 中的 `host.docker.internal:host-gateway`。如果使用 host 网络，可以留空。
+
 ## 数据与安全
 
 - 备份 `data/` 目录前先停止容器；

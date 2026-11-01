@@ -180,6 +180,17 @@ TZ=Asia/Shanghai</code></pre>
 </section>
 
 <section>
+  <h2>字幕</h2>
+  <p>外挂字幕放在与 <code>.strm</code> 相同的目录，文件名保持相同 basename，例如：</p>
+<pre><code>Movie.strm
+Movie.srt
+Movie.zh.srt
+Movie.ass</code></pre>
+  <p>内嵌字幕由服务端的 <code>ffprobe</code> 探测，作为媒体流信息下发给播放器；Docker 镜像已包含 ffmpeg/ffprobe。</p>
+  <p>如果使用 bridge 网络且 <code>.strm</code> 里是 <code>127.0.0.1</code>，请在 <code>.env</code> 设置 <code>UPSTREAM_HOST=host.docker.internal</code>，并保留 compose 的 host-gateway 配置。</p>
+</section>
+
+<section>
   <h2>8. 常用 Docker 命令</h2>
   <div class="grid">
     <div>

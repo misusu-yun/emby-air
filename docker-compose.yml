@@ -20,6 +20,8 @@ services:
     image: emby-air:test
     container_name: emby-air
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     init: true
     stop_grace_period: 30s
 
@@ -33,6 +35,8 @@ services:
       DATA_DIR: /data
       MEDIA_ROOT: /media
       SERVER_NAME: "${SERVER_NAME:-emby-air}"
+      # bridge 网络下把 .strm 中的 127.0.0.1 换成宿主机可达地址
+      UPSTREAM_HOST: "${UPSTREAM_HOST:-host.docker.internal}"
 
       # 初始管理员：只在用户不存在时创建，不会覆盖已有密码
       ADMIN_USER: "${ADMIN_USER:-admin}"

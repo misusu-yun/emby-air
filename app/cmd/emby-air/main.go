@@ -1000,13 +1000,15 @@ func serve(db *store.DB, dataDir, mediaRoot string) {
 	}
 
 	srv := httpapi.New(db, httpapi.Config{
-		ServerName: env("SERVER_NAME", "emby-air"),
-		ServerId:   env("SERVER_ID", "00000000000000000000000000000001"),
-		Port:       port,
-		MediaRoot:  mediaRoot,
-		ImageCache: imageCacheDir,
-		Jobs:       mgr,
-		Logs:       logRing,
+		ServerName:    env("SERVER_NAME", "emby-air"),
+		ServerId:      env("SERVER_ID", "00000000000000000000000000000001"),
+		Port:          port,
+		MediaRoot:     mediaRoot,
+		ImageCache:    imageCacheDir,
+		SubtitleCache: filepath.Join(dataDir, "cache", "subtitles"),
+		UpstreamHost:  env("UPSTREAM_HOST", ""),
+		Jobs:          mgr,
+		Logs:          logRing,
 		CompatLog: func(r *http.Request) {
 			// 兜底日志按路径去重：Moonfin/客户端轮询会反复打同一个接口，
 			// 10 分钟内同路径只记一次，避免把 Web 日志刷满。

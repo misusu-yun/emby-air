@@ -88,6 +88,12 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request) {
 		sources = []model.MediaSource{src}
 	}
 	attachExternalSubtitles(sources, id)
+	if s.cfg.SubtitleCache != "" {
+		tmp := *it
+		tmp.MediaSources = sources
+		s.attachEmbeddedSubtitles(r.Context(), &tmp)
+		sources = tmp.MediaSources
+	}
 	popcorn := s.isPopcornClient(r)
 	out := make([]model.MediaSource, len(sources))
 	for i, ms := range sources {
@@ -220,7 +226,8 @@ func (s *Server) handleVideoStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 网易爆米花对 302 的处理不稳定：可配置成由服务端代理直链（流式转发，不缓存整段）。
-	if (s.cfg.PopcornProxyStream && s.isPopcornClient(r)) || isVidHub(r) {
+	// bridge 模式下 127.0.0.1 在客户端不可达，也必须由服务端代理。
+	if (s.cfg.PopcornProxyStream && s.isPopcornClient(r)) || isVidHub(r) || s.cfg.UpstreamHost != "" {
 		// VidHub 电视版无法访问容器内的 127.0.0.1 直链，改为服务端代理；
 		// Range/206 由 proxyStream 透传。
 		s.proxyStream(w, r, target)
@@ -285,6 +292,7 @@ func prettyURL(raw string) string {
 
 // proxyStream 流式转发上游直链，保留 Range/206 语义；不把内容读进内存。
 func (s *Server) proxyStream(w http.ResponseWriter, r *http.Request, target string) {
+	target = s.rewriteUpstreamTarget(target)
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, target, nil)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "bad upstream url")

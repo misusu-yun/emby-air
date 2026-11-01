@@ -22,11 +22,15 @@ import (
 
 // Config 是 HTTP 层需要的运行参数。
 type Config struct {
-	ServerName string
-	ServerId   string
-	Port       int
-	MediaRoot  string
-	ImageCache string
+	ServerName    string
+	ServerId      string
+	Port          int
+	MediaRoot     string
+	ImageCache    string
+	SubtitleCache string // 字幕探测/抽取缓存目录
+	// UpstreamHost 用于 bridge 网络：把 .strm 里的 127.0.0.1 换成宿主机可达地址。
+	// 生产 host 网络留空；bridge 可设为 host.docker.internal。
+	UpstreamHost string
 	// CompatLog 记录未实现的 /emby/* 请求，便于后续补齐。
 	CompatLog func(*http.Request)
 	// AfterScan 在扫描完成后调用（传入库根目录），用于自动刮削新条目。

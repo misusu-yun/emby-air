@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-$(go env GOARCH)} \
 
 # ---- runtime stage ----
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata ffmpeg
 COPY --from=build /out/emby-air /usr/local/bin/emby-air
 
 ENV DATA_DIR=/data \

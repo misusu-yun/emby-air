@@ -429,7 +429,7 @@ func (s *Server) attachListMediaSources(r *http.Request, items []model.Item, fie
 		log.Printf("列表附加 MediaSources 失败：%v", err)
 	}
 	for i := range items {
-		s.enrichItemSubtitles(r.Context(), &items[i])
+		s.enrichItemSubtitles(r.Context(), &items[i], false)
 		for j := range items[i].MediaSources {
 			items[i].MediaSources[j].Path = prettyURL(items[i].MediaSources[j].Path)
 		}
