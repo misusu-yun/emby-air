@@ -232,7 +232,6 @@ func (s *Server) writeItemsPage(w http.ResponseWriter, r *http.Request, q model.
 		return
 	}
 	s.attachListMediaSources(r, page.Items, q.Fields)
-	bumpVidHubImageTagsInItems(r, page.Items)
 	for i := range page.Items {
 		for j := range page.Items[i].MediaSources {
 			page.Items[i].MediaSources[j].Path = prettyURL(page.Items[i].MediaSources[j].Path)
@@ -499,7 +498,6 @@ func (s *Server) handleItem(w http.ResponseWriter, r *http.Request) {
 	}
 	// 同 handleUserItem：ChildCount/RecursiveItemCount/UserData 缺失会让 Filmly 退回首页。
 	s.ensureDetailShape(r, it)
-	bumpVidHubImageTags(r, it)
 	s.trace.add(map[string]any{
 		"ts": time.Now().UnixMilli(), "path": "/itemDetail2",
 		"item": it.Name, "user": uid, "returned": returned,

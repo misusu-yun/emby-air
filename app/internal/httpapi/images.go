@@ -330,34 +330,6 @@ func ifNoneMatch(header, etag string) bool {
 
 func isJPEG(b []byte) bool { return len(b) > 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF }
 
-// bumpVidHubImageTags 让 VidHub 的图片 URL 带一个新 tag：
-// 旧版本已经按 immutable 缓存了原图，仅改变响应内容不会触发重新请求；
-// tag 变化后客户端才会重新拉取 720px 缩略图。只影响 VidHub，其它客户端保持原 tag。
-func bumpVidHubImageTags(r *http.Request, it *model.Item) {
-	if it == nil || !isVidHub(r) {
-		return
-	}
-	for k, v := range it.ImageTags {
-		if v != "" {
-			it.ImageTags[k] = v + "-vh3"
-		}
-	}
-	for i, v := range it.BackdropImageTags {
-		if v != "" {
-			it.BackdropImageTags[i] = v + "-vh3"
-		}
-	}
-}
-
-func bumpVidHubImageTagsInItems(r *http.Request, items []model.Item) {
-	if !isVidHub(r) {
-		return
-	}
-	for i := range items {
-		bumpVidHubImageTags(r, &items[i])
-	}
-}
-
 // findImage 在 MediaRoot 下按条目路径找到真实图片。
 // maxWidth>0 时优先同一目录里最接近宽度的 "poster<W>.jpg" 变体（不缩放）。
 func (s *Server) findImage(r *http.Request, itemID, imgType string, maxWidth int) ([]byte, string, bool) {
