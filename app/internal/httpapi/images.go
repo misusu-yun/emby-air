@@ -158,11 +158,6 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 	if ok && s.isPopcornClient(r) {
 		thumbWidth = popcornThumbWidth(imgType, maxWidth)
 	}
-	// VidHub 列表页会一次预取大量海报；它通常不带 maxWidth，原图 200~500KB/张
-	// 会把带宽排队，视觉上就是“上面的海报迟迟不出来”。给 VidHub 发 720px 缩略图。
-	if ok && isVidHub(r) {
-		thumbWidth = vidhubThumbWidth(imgType, maxWidth)
-	}
 	if thumbWidth > 0 {
 		if thumb, changed := s.clientThumb(body, id, imgType, thumbWidth); changed {
 			body = thumb
@@ -303,31 +298,6 @@ func popcornClampThumbWidth(maxWidth, def, limit int) int {
 	return maxWidth
 }
 
-// vidhubThumbWidth 给 VidHub 列表海报一个默认缩略宽度。
-// VidHub 不满屏显示时用 720px 足够；请求更大时最多 1024px，避免 4K 原图占满隧道。
-// 背景图仍保留清晰度：不带 maxWidth 时不缩放。
-func vidhubThumbWidth(imgType string, maxWidth int) int {
-	switch strings.ToLower(strings.TrimSpace(imgType)) {
-	case "", "primary", "poster", "thumb":
-		if maxWidth <= 0 {
-			return 720
-		}
-		if maxWidth > 1024 {
-			return 1024
-		}
-		return maxWidth
-	case "backdrop", "background", "fanart":
-		if maxWidth <= 0 {
-			return 0
-		}
-		if maxWidth > 1920 {
-			return 1920
-		}
-		return maxWidth
-	}
-	return 0
-}
-
 func writePlaceholderPNG(w http.ResponseWriter, r *http.Request, png []byte, isHead bool) {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Content-Length", strconv.Itoa(len(png)))
@@ -369,12 +339,12 @@ func bumpVidHubImageTags(r *http.Request, it *model.Item) {
 	}
 	for k, v := range it.ImageTags {
 		if v != "" {
-			it.ImageTags[k] = v + "-vh2"
+			it.ImageTags[k] = v + "-vh3"
 		}
 	}
 	for i, v := range it.BackdropImageTags {
 		if v != "" {
-			it.BackdropImageTags[i] = v + "-vh2"
+			it.BackdropImageTags[i] = v + "-vh3"
 		}
 	}
 }
@@ -606,9 +576,6 @@ func (s *Server) handleHeadImage(w http.ResponseWriter, r *http.Request) {
 	}
 	if ok && s.isPopcornClient(r) {
 		thumbWidth = popcornThumbWidth(imgType, maxWidth)
-	}
-	if ok && isVidHub(r) {
-		thumbWidth = vidhubThumbWidth(imgType, maxWidth)
 	}
 	if thumbWidth > 0 {
 		if thumb, changed := s.clientThumb(body, id, imgType, thumbWidth); changed {
