@@ -483,6 +483,8 @@ func (s *Server) handleItem(w http.ResponseWriter, r *http.Request) {
 		it.MediaSources[i].Path = prettyURL(it.MediaSources[i].Path)
 	}
 	it.Path = prettyURL(it.Path)
+	// 详情页（部分客户端走 /Items/{Id}）也要有外挂/内嵌字幕、音轨和版本大小。
+	s.enrichItemSubtitles(r.Context(), it, true)
 	// 详情必须带 UserData：VidHub 等客户端靠 PlaybackPositionTicks 决定从哪续播。
 	s.setPopcornItemStreamURLs(r, it)
 	var returned int64

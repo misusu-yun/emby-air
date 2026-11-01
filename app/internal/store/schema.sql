@@ -231,3 +231,20 @@ CREATE TABLE IF NOT EXISTS api_keys (
   note    TEXT DEFAULT '',
   created INTEGER NOT NULL
 );
+
+-- media_probes 缓存上游媒体探测结果（大小、ETag、音视频/字幕轨），
+-- 避免每次打开详情页都重新 ffprobe；URL/ETag/大小变化时由服务端刷新。
+CREATE TABLE IF NOT EXISTS media_probes (
+  item_id       TEXT NOT NULL,
+  source_id     TEXT NOT NULL,
+  target        TEXT NOT NULL DEFAULT '',
+  size          INTEGER NOT NULL DEFAULT 0,
+  etag          TEXT NOT NULL DEFAULT '',
+  last_modified TEXT NOT NULL DEFAULT '',
+  tracks        TEXT NOT NULL DEFAULT '[]',
+  error         TEXT NOT NULL DEFAULT '',
+  probed_at     INTEGER NOT NULL DEFAULT 0,
+  checked_at    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (item_id, source_id)
+);
+CREATE INDEX IF NOT EXISTS idx_media_probes_item ON media_probes(item_id);

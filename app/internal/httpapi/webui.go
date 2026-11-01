@@ -119,6 +119,10 @@ const webUIHTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"
 <tr><td>刮削速率</td><td><input id="setRate" type="number" min="1" max="15" step="1" style="width:80px"> req/s <span class="muted">建议 8–15</span></td></tr>
 <tr><td>扫描后自动刮削</td><td><label><input id="setAutoScrape" type="checkbox"> 启用</label></td></tr>
 <tr><td>写 NFO</td><td><label><input id="setNFO" type="checkbox"> 启用</label> <span class="muted">需要媒体目录可写</span></td></tr>
+<tr><td>拼音索引定时重建</td><td><input id="setIndexTime" size="8" placeholder="03:10"> <span class="muted">留空关闭；格式 HH:MM</span>
+ <button onclick="saveNameIndexTime()">保存时间</button>
+ <button onclick="rebuildNameIndex()">立即全量重建</button>
+ <span id="setIndexHint" class="muted"></span></td></tr>
 </tbody></table>
 <div style="margin-top:10px"><button onclick="saveSettings()">保存设置</button> <span id="setHint" class="muted"></span></div>
 </section>
@@ -372,7 +376,7 @@ async function loadJobs(){try{
  const raw=await api('/emby/Admin/Jobs')||{};
  const q=raw.Queued||raw.queued, dn=raw.Done||raw.done;
  const d={running:raw.Running||raw.running||null,queued:Array.isArray(q)?q:[],done:Array.isArray(dn)?dn:[]};
- const kindLabel=k=>({scan:'扫描',scrape:'刮削',rescan:'重新扫描',rescore:'重新刮削'}[k]||k);
+ const kindLabel=k=>({scan:'扫描',scrape:'刮削',rescan:'重新扫描',rescore:'重新刮削',index:'拼音索引'}[k]||k);
  const pct=j=>j.Total>0?Math.min(100,Math.round(j.Done/j.Total*100)):0;
  const bar=j=>j.Total>0?'<progress value="'+pct(j)+'" max="100"></progress>':'<progress></progress>';
  const line=j=>'<div style="margin:4px 0">'+bar(j)+' '+
@@ -647,6 +651,24 @@ async function saveLibs(id){
  const r=await fetch('/emby/Users/'+id+'/Policy',{method:'POST',headers:{'Content-Type':'application/json','X-Emby-Token':T},body:JSON.stringify(body)});
  if(r.ok){closeModal();toast('库权限已保存',true);loadUsers();}else{toast('保存失败：HTTP '+r.status,false);}
 }
+async function loadNameIndex(){
+ try{
+  const d=await api('/webui/api/name-index')||{};
+  if($('setIndexTime'))$('setIndexTime').value=d.Time||'';
+  if($('setIndexHint'))$('setIndexHint').textContent=d.LastRun?('上次完成：'+d.LastRun):'尚未全量重建';
+ }catch(e){if($('setIndexHint'))$('setIndexHint').textContent='读取失败';}
+}
+async function saveNameIndexTime(){
+ const t=($('setIndexTime').value||'').trim();
+ const r=await fetch('/webui/api/name-index',{method:'POST',headers:{'Content-Type':'application/json','X-Emby-Token':T},body:JSON.stringify({Time:t})});
+ if(r.ok){toast(t?'拼音索引定时重建已保存':'已关闭拼音索引定时重建',true);loadNameIndex();}
+ else {let x='';try{x=(await r.json()).error||''}catch(_){}toast('保存失败：HTTP '+r.status+(x?' '+x:''),false);}
+}
+async function rebuildNameIndex(){
+ const r=await fetch('/webui/api/name-index/rebuild',{method:'POST',headers:{'X-Emby-Token':T}});
+ if(r.status===202){toast('已加入拼音索引重建任务',true);loadJobs();loadNameIndex();}
+ else{toast('提交失败：HTTP '+r.status,false);}
+}
 async function loadSettings(){
  try{
   const d=await api('/webui/api/settings')||{};
@@ -659,6 +681,7 @@ async function loadSettings(){
   $('setTmdbKeyState').textContent=d.TMDBKeySet?'已配置（留空不修改）':'未配置';
   $('setTmdbKey').value='';
   $('setClearKey').checked=false;
+  loadNameIndex();
  }catch(e){toast('读取设置失败：'+(e&&e.message||e),false);}
 }
 async function saveSettings(){

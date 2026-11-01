@@ -42,15 +42,20 @@ func (s *Server) handleAdminJobs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		kind := jobs.KindScan
-		if strings.EqualFold(body.Kind, "scrape") {
+		switch {
+		case strings.EqualFold(body.Kind, "scrape"):
 			kind = jobs.KindScrape
+		case strings.EqualFold(body.Kind, "index"), strings.EqualFold(body.Kind, "reindex"), strings.EqualFold(body.Kind, "nameindex"):
+			kind = jobs.KindIndex
 		}
 		mode := jobs.ModeIncremental
 		if strings.EqualFold(body.Mode, "full") {
 			mode = jobs.ModeFull
 		}
 		name := ""
-		if body.LibraryId != "" && s.db != nil {
+		if kind == jobs.KindIndex {
+			name = "拼音索引"
+		} else if body.LibraryId != "" && s.db != nil {
 			if views, err := s.db.GetViews(r.Context()); err == nil {
 				for _, v := range views {
 					if v.Id == body.LibraryId {

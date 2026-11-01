@@ -121,6 +121,10 @@ type Server struct {
 	streamClient *http.Client
 	// probe 记录最近 40 次鉴权请求的客户端特征，用于识别未知客户端。
 	probe clientProbe
+	// probeChecks 防止同一播放源的 ETag 校验/重新探测并发重复执行。
+	probeChecks sync.Map
+	// imageSem 限制图片解码/读盘的并发数；客户端一次预取上百张时避免把 DB/磁盘打满。
+	imageSem chan struct{}
 }
 
 // StartScan 在后台跑一次目录扫描；已在跑时返回 false。
@@ -182,7 +186,7 @@ func (s *Server) scanStatus() string {
 
 // New 构造 Server。
 func New(db *store.DB, cfg Config) *Server {
-	s := &Server{db: db, cfg: cfg, startedAt: time.Now(), progress: newProgressAgg(db), bus: newEventBus()}
+	s := &Server{db: db, cfg: cfg, startedAt: time.Now(), progress: newProgressAgg(db), bus: newEventBus(), imageSem: make(chan struct{}, 8)}
 	s.lifeCtx, s.lifeCancel = context.WithCancel(context.Background())
 	s.progress.start()
 	s.startSearchWarmer()
@@ -301,6 +305,9 @@ func (s *Server) route() http.Handler {
 	mux.HandleFunc("POST /webui/api/settings", s.auth(s.requireAdmin(s.handleWebSettings)))
 	mux.HandleFunc("GET /webui/api/scan-schedule", s.auth(s.handleScanSchedule))
 	mux.HandleFunc("POST /webui/api/scan-schedule", s.auth(s.handleScanSchedule))
+	mux.HandleFunc("GET /webui/api/name-index", s.auth(s.requireAdmin(s.handleNameIndexSchedule)))
+	mux.HandleFunc("POST /webui/api/name-index", s.auth(s.requireAdmin(s.handleNameIndexSchedule)))
+	mux.HandleFunc("POST /webui/api/name-index/rebuild", s.auth(s.requireAdmin(s.handleNameIndexRebuild)))
 	mux.HandleFunc("POST /webui/api/media/{Id}/size", s.auth(s.handleWebMediaSize))
 	mux.HandleFunc("GET /webui/api/debug/playback", s.auth(s.requireAdmin(s.handlePlaybackTrace)))
 	mux.HandleFunc("GET /webui/api/debug/clients", s.auth(s.requireAdmin(s.handleClientProbe)))

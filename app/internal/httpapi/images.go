@@ -68,6 +68,24 @@ var imageCandidates = map[string][]string{
 	"chapter":    {"chapter.jpg"},
 }
 
+func (s *Server) acquireImageSlot(r *http.Request) bool {
+	if s.imageSem == nil {
+		return true
+	}
+	select {
+	case s.imageSem <- struct{}{}:
+		return true
+	case <-r.Context().Done():
+		return false
+	}
+}
+
+func (s *Server) releaseImageSlot() {
+	if s.imageSem != nil {
+		<-s.imageSem
+	}
+}
+
 // handleImage 处理 GET/HEAD /emby/Items/{Id}/Images/{Type} 以及路径式变体
 // /emby/Items/{Id}/Images/{Type}/{Index}/{Tag}/{Format}/{MaxWidth}/{MaxHeight}/{...}。
 // 缺失一律返回 1×1 透明 PNG（200），绝不返回 HTML。
@@ -82,6 +100,10 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 		// /emby/Items/{Id}/Images 这条路径没有 Type，取 Primary。
 		imgType = "primary"
 	}
+	if !s.acquireImageSlot(r) {
+		return
+	}
+	defer s.releaseImageSlot()
 
 	// 路径式参数：Type/Index/Tag/Format/MaxWidth/MaxHeight/PercentPlayed/UnplayedCount
 	// 只取我们需要的前几段；其余忽略（客户端可能塞任意尾巴）。
@@ -135,6 +157,11 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 	// 同样被缩成 480 就极其模糊。这里按图片类型分流（0 = 不缩放，返回原图）。
 	if ok && s.isPopcornClient(r) {
 		thumbWidth = popcornThumbWidth(imgType, maxWidth)
+	}
+	// VidHub 列表页会一次预取大量海报；它通常不带 maxWidth，原图 200~500KB/张
+	// 会把带宽排队，视觉上就是“上面的海报迟迟不出来”。给 VidHub 发 720px 缩略图。
+	if ok && isVidHub(r) {
+		thumbWidth = vidhubThumbWidth(imgType, maxWidth)
 	}
 	if thumbWidth > 0 {
 		if thumb, changed := s.clientThumb(body, id, imgType, thumbWidth); changed {
@@ -276,6 +303,31 @@ func popcornClampThumbWidth(maxWidth, def, limit int) int {
 	return maxWidth
 }
 
+// vidhubThumbWidth 给 VidHub 列表海报一个默认缩略宽度。
+// VidHub 不满屏显示时用 720px 足够；请求更大时最多 1024px，避免 4K 原图占满隧道。
+// 背景图仍保留清晰度：不带 maxWidth 时不缩放。
+func vidhubThumbWidth(imgType string, maxWidth int) int {
+	switch strings.ToLower(strings.TrimSpace(imgType)) {
+	case "", "primary", "poster", "thumb":
+		if maxWidth <= 0 {
+			return 720
+		}
+		if maxWidth > 1024 {
+			return 1024
+		}
+		return maxWidth
+	case "backdrop", "background", "fanart":
+		if maxWidth <= 0 {
+			return 0
+		}
+		if maxWidth > 1920 {
+			return 1920
+		}
+		return maxWidth
+	}
+	return 0
+}
+
 func writePlaceholderPNG(w http.ResponseWriter, r *http.Request, png []byte, isHead bool) {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Content-Length", strconv.Itoa(len(png)))
@@ -314,8 +366,8 @@ func (s *Server) findImage(r *http.Request, itemID, imgType string, maxWidth int
 	if s.db == nil || s.cfg.MediaRoot == "" {
 		return nil, "", false
 	}
-	it, err := s.db.GetItem(r.Context(), itemID)
-	if err != nil || it == nil {
+	info, err := s.db.ItemImageInfo(r.Context(), itemID)
+	if err != nil || info == nil {
 		// 媒体库封面：库本身不是 item，单独存在 cache/libraries/<id>.img。
 		if body, ok := readFileLimited(filepath.Join(s.cfg.ImageCache, "libraries", itemID+".img")); ok {
 			sum := sha1.Sum(body)
@@ -323,6 +375,9 @@ func (s *Server) findImage(r *http.Request, itemID, imgType string, maxWidth int
 		}
 		return nil, "", false
 	}
+	// 图片端点只需要路径与图片引用，不能为 100 张封面重复读取整行及 media_sources。
+	it := &model.Item{Id: itemID, Type: info.Type, Path: info.Path,
+		ImageRef: info.ImageRef, BackdropRef: info.BackdropRef, LogoRef: info.LogoRef}
 	// 0) 单集缩略图按需下载：TMDB still_path 存在但本地没有缓存时，拉一次 w300 并落盘。
 	// 只在客户端真的请求这张图时发生，避免刮削时批量下载 6 万张图（磁盘/带宽/内存都扛不住）。
 	if imgType == "primary" || imgType == "thumb" {
@@ -500,6 +555,10 @@ func (s *Server) handleHeadImage(w http.ResponseWriter, r *http.Request) {
 	if imgType == "" {
 		imgType = "primary"
 	}
+	if !s.acquireImageSlot(r) {
+		return
+	}
+	defer s.releaseImageSlot()
 	maxWidth := 0
 	if rest != "" {
 		segs := strings.Split(rest, "/")
@@ -519,6 +578,9 @@ func (s *Server) handleHeadImage(w http.ResponseWriter, r *http.Request) {
 	}
 	if ok && s.isPopcornClient(r) {
 		thumbWidth = popcornThumbWidth(imgType, maxWidth)
+	}
+	if ok && isVidHub(r) {
+		thumbWidth = vidhubThumbWidth(imgType, maxWidth)
 	}
 	if thumbWidth > 0 {
 		if thumb, changed := s.clientThumb(body, id, imgType, thumbWidth); changed {

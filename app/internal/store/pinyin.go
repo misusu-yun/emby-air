@@ -133,3 +133,78 @@ func (d *DB) FillMissingNameIndex(ctx context.Context, batch int) (int, error) {
 	markSearchDirty()
 	return len(list), nil
 }
+
+// RebuildNameIndex 重新计算全部条目的拼音索引（不是只补空值）。
+// 用于修复历史条目、算法变化后人工全量刷新；按 id 游标分批，避免长事务。
+// progress 可选：done/total 用于任务中心展示。
+func (d *DB) RebuildNameIndex(ctx context.Context, progress func(done, total int)) (int, error) {
+	var total int
+	if err := d.sql.QueryRowContext(ctx, `SELECT count(*) FROM items`).Scan(&total); err != nil {
+		return 0, err
+	}
+	lastID := ""
+	done := 0
+	for {
+		rows, err := d.sql.QueryContext(ctx,
+			`SELECT id, name, coalesce(pinyin,''), coalesce(pinyin_initials,'')
+			 FROM items WHERE id > ? ORDER BY id LIMIT 1000`, lastID)
+		if err != nil {
+			return done, err
+		}
+		type row struct {
+			id, name, pinyin, initials string
+		}
+		var batch []row
+		for rows.Next() {
+			var r row
+			if err := rows.Scan(&r.id, &r.name, &r.pinyin, &r.initials); err != nil {
+				rows.Close()
+				return done, err
+			}
+			batch = append(batch, r)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return done, err
+		}
+		if len(batch) == 0 {
+			break
+		}
+		lastID = batch[len(batch)-1].id
+		tx, err := d.sql.BeginTx(ctx, nil)
+		if err != nil {
+			return done, err
+		}
+		stmt, err := tx.PrepareContext(ctx, `UPDATE items SET pinyin=?, pinyin_initials=? WHERE id=?`)
+		if err != nil {
+			tx.Rollback()
+			return done, err
+		}
+		changed := 0
+		for _, r := range batch {
+			f, i := nameIndexes(r.name)
+			if f == r.pinyin && i == r.initials {
+				continue
+			}
+			if _, err := stmt.ExecContext(ctx, f, i, r.id); err != nil {
+				stmt.Close()
+				tx.Rollback()
+				return done, err
+			}
+			changed++
+		}
+		stmt.Close()
+		if err := tx.Commit(); err != nil {
+			return done, err
+		}
+		done += len(batch)
+		if changed > 0 {
+			markSearchDirty()
+		}
+		if progress != nil {
+			progress(done, total)
+		}
+	}
+	markSearchDirty()
+	return done, nil
+}

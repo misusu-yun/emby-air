@@ -621,6 +621,19 @@ func serve(db *store.DB, dataDir, mediaRoot string) {
 		// 持锁期间也不能调用 refreshAll（refreshAll 自己会加锁，同一互斥锁不可重入）。
 		heavyMu.Lock()
 		defer heavyMu.Unlock()
+		if j.Kind == jobs.KindIndex {
+			store.SetSearchPaused(true)
+			defer store.SetSearchPaused(false)
+			n, err := db.RebuildNameIndex(ctx, func(done, total int) {
+				mgr.Update(j.Id, total, done, "重建拼音索引")
+			})
+			if err != nil {
+				return err
+			}
+			_ = db.SetSetting(context.Background(), "name_index_at", time.Now().Format("2006-01-02 15:04"))
+			log.Printf("拼音索引全量重建完成：检查 %d 条", n)
+			return nil
+		}
 		if j.Kind == jobs.KindRescan || j.Kind == jobs.KindRescore {
 			label := j.LibraryName
 			if j.Kind == jobs.KindRescan {
@@ -1114,6 +1127,28 @@ func serve(db *store.DB, dataDir, mediaRoot string) {
 				}
 			}
 			<-tick.C
+		}
+	}()
+
+	// 拼音索引定时重建：只读/写数据库，不触发媒体扫描；默认关闭，由 Web 设置页开启。
+	// 与扫描共用任务队列，避免它和扫描同时写 SQLite。
+	go func() {
+		lastRun := ""
+		tick := time.NewTicker(30 * time.Second)
+		defer tick.Stop()
+		for range tick.C {
+			sched := db.GetSetting(context.Background(), "name_index_schedule")
+			if sched == "" {
+				continue
+			}
+			now := time.Now()
+			day := now.Format("2006-01-02")
+			if now.Format("15:04") != sched || lastRun == day {
+				continue
+			}
+			lastRun = day
+			mgr.Submit(jobs.KindIndex, jobs.ModeFull, "", "拼音索引")
+			log.Printf("定时拼音索引重建已入队（%s）", sched)
 		}
 	}()
 

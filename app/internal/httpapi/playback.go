@@ -94,6 +94,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request) {
 		s.attachEmbeddedSubtitles(r.Context(), &tmp)
 		sources = tmp.MediaSources
 	}
+	appendSourceSizes(sources)
 	popcorn := s.isPopcornClient(r)
 	out := make([]model.MediaSource, len(sources))
 	for i, ms := range sources {

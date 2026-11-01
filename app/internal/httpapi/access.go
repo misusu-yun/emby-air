@@ -141,8 +141,10 @@ func (s *Server) imageRequestAllowed(r *http.Request, itemID string) bool {
 	if u == nil || s.db == nil {
 		return false
 	}
-	if it, err := s.db.GetItem(r.Context(), itemID); err == nil && it != nil {
-		return s.itemAllowed(r.Context(), u, it.Id)
+	// 图片请求非常密集：不要为了权限再完整加载一次 item（findImage 随后还会查）。
+	// ItemViewID 直接走 item -> 媒体库归属，返回为空时再按媒体库 ID 判断。
+	if vid, err := s.db.ItemViewID(r.Context(), itemID); err == nil && vid != "" {
+		return s.viewAllowed(r.Context(), u, vid)
 	}
 	return s.viewAllowed(r.Context(), u, itemID)
 }

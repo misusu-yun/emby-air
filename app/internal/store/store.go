@@ -103,7 +103,7 @@ func Open(path string) (*DB, error) {
 func (d *DB) Close() error { return d.sql.Close() }
 
 // schemaVersion 是当前 schema 版本；每次结构变更都必须 +1 并在 migrateV2 之后追加迁移。
-const schemaVersion = 15
+const schemaVersion = 16
 
 // v2Columns 是 items 表在 v2 新增的列。ALTER TABLE 不支持 IF NOT EXISTS，
 // 因此按 PRAGMA table_info 的结果差量补列；重复执行安全。
@@ -229,6 +229,9 @@ func (d *DB) migrateV2(ctx context.Context) error {
 		return err
 	}
 	if err := d.migrateV15(ctx); err != nil {
+		return err
+	}
+	if err := d.migrateV16(ctx); err != nil {
 		return err
 	}
 	return d.migrateViews(ctx)
@@ -973,6 +976,29 @@ func (d *DB) ViewExists(ctx context.Context, id string) (bool, error) {
 		return false, nil
 	}
 	return err == nil, err
+}
+
+// ItemImageInfo 是图片端点需要的轻量字段，避免每张封面都完整加载 item + media_sources。
+type ItemImageInfo struct {
+	Path        string
+	Type        string
+	ImageRef    string
+	BackdropRef string
+	LogoRef     string
+}
+
+func (d *DB) ItemImageInfo(ctx context.Context, id string) (*ItemImageInfo, error) {
+	var v ItemImageInfo
+	err := d.sql.QueryRowContext(ctx,
+		`SELECT coalesce(path,''), kind, coalesce(image_ref,''), coalesce(backdrop_ref,''), coalesce(logo_ref,'')
+		 FROM items WHERE id=?`, id).Scan(&v.Path, &v.Type, &v.ImageRef, &v.BackdropRef, &v.LogoRef)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
 }
 
 func (d *DB) GetItem(ctx context.Context, id string) (*model.Item, error) {
@@ -3586,6 +3612,88 @@ func (d *DB) ItemPath(ctx context.Context, id string) string {
 // SetMediaSourceSize 缓存某个播放源的字节大小。
 func (d *DB) SetMediaSourceSize(ctx context.Context, itemID, sourceID string, size int64) error {
 	_, err := d.sql.ExecContext(ctx, `UPDATE media_sources SET size=? WHERE item_id=? AND source_id=?`, size, itemID, sourceID)
+	return err
+}
+
+// MediaProbe 是上游媒体的一次探测结果（不保存视频内容）。
+type MediaProbe struct {
+	ItemID       string
+	SourceID     string
+	Target       string
+	Size         int64
+	ETag         string
+	LastModified string
+	Tracks       string // JSON 数组，字段由 httpapi 解析
+	Error        string
+	ProbedAt     int64
+	CheckedAt    int64
+}
+
+// GetMediaProbe 读取某个播放源的探测缓存。
+func (d *DB) GetMediaProbe(ctx context.Context, itemID, sourceID string) (*MediaProbe, error) {
+	var p MediaProbe
+	err := d.sql.QueryRowContext(ctx,
+		`SELECT target, coalesce(size,0), coalesce(etag,''), coalesce(last_modified,''), coalesce(tracks,'[]'), coalesce(error,''), coalesce(probed_at,0), coalesce(checked_at,0)
+		 FROM media_probes WHERE item_id=? AND source_id=?`, itemID, sourceID).
+		Scan(&p.Target, &p.Size, &p.ETag, &p.LastModified, &p.Tracks, &p.Error, &p.ProbedAt, &p.CheckedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	p.ItemID, p.SourceID = itemID, sourceID
+	return &p, nil
+}
+
+// SaveMediaProbe 保存探测结果，并同步 media_sources.size 供列表/客户端直接读取。
+func (d *DB) SaveMediaProbe(ctx context.Context, p MediaProbe) error {
+	tx, err := d.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO media_probes(item_id,source_id,target,size,etag,last_modified,tracks,error,probed_at,checked_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?)
+		 ON CONFLICT(item_id,source_id) DO UPDATE SET
+		   target=excluded.target, size=excluded.size, etag=excluded.etag,
+		   last_modified=excluded.last_modified, tracks=excluded.tracks,
+		   error=excluded.error, probed_at=excluded.probed_at, checked_at=excluded.checked_at`,
+		p.ItemID, p.SourceID, p.Target, p.Size, p.ETag, p.LastModified, p.Tracks, p.Error, p.ProbedAt, p.CheckedAt); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE media_sources SET size=? WHERE item_id=? AND source_id=?`, p.Size, p.ItemID, p.SourceID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// MarkMediaProbeChecked 记录一次 ETag/大小校验时间。
+func (d *DB) MarkMediaProbeChecked(ctx context.Context, itemID, sourceID string, checkedAt int64) error {
+	_, err := d.sql.ExecContext(ctx,
+		`UPDATE media_probes SET checked_at=? WHERE item_id=? AND source_id=?`, checkedAt, itemID, sourceID)
+	return err
+}
+
+// DeleteMediaProbe 删除某个播放源的探测缓存。
+func (d *DB) DeleteMediaProbe(ctx context.Context, itemID, sourceID string) error {
+	_, err := d.sql.ExecContext(ctx, `DELETE FROM media_probes WHERE item_id=? AND source_id=?`, itemID, sourceID)
+	return err
+}
+
+// migrateV16 缓存上游媒体探测结果；新表由 schema.sql 创建，老库在这里补建。
+func (d *DB) migrateV16(ctx context.Context) error {
+	_, err := d.sql.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS media_probes (
+		  item_id TEXT NOT NULL, source_id TEXT NOT NULL, target TEXT NOT NULL DEFAULT '',
+		  size INTEGER NOT NULL DEFAULT 0, etag TEXT NOT NULL DEFAULT '',
+		  last_modified TEXT NOT NULL DEFAULT '', tracks TEXT NOT NULL DEFAULT '[]',
+		  error TEXT NOT NULL DEFAULT '', probed_at INTEGER NOT NULL DEFAULT 0, checked_at INTEGER NOT NULL DEFAULT 0,
+		  PRIMARY KEY (item_id, source_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_media_probes_item ON media_probes(item_id);`)
 	return err
 }
 

@@ -20,6 +20,7 @@ const (
 	KindScrape  Kind = "scrape"
 	KindRescan  Kind = "rescan"  // 单条重新扫描
 	KindRescore Kind = "rescore" // 单条重新刮削
+	KindIndex   Kind = "index"   // 重建拼音搜索索引
 )
 
 // Mode 执行模式。
