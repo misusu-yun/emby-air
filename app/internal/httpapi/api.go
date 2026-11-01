@@ -414,10 +414,14 @@ func (s *Server) route() http.Handler {
 	mux.HandleFunc("POST /emby/Library/Media/Updated", s.auth(s.requireAdmin(s.handleMediaUpdated)))
 	mux.HandleFunc("GET /emby/Items/{Id}/Download", s.auth(s.handleVideoStream))
 	mux.HandleFunc("HEAD /emby/Items/{Id}/Download", s.auth(s.handleVideoStream))
+	mux.HandleFunc("GET /emby/Videos/{Id}/Subtitles/{Index}/Stream", s.auth(s.handleSubtitle))
+	mux.HandleFunc("HEAD /emby/Videos/{Id}/Subtitles/{Index}/Stream", s.auth(s.handleSubtitle))
 	mux.HandleFunc("GET /emby/Videos/{Id}/{Action}", s.auth(s.handleVideoAlias))
 	mux.HandleFunc("HEAD /emby/Videos/{Id}/{Action}", s.auth(s.handleVideoAlias))
 	// 无前缀兜底：Filmly 的 base URL 已带 /emby 时，/Videos/... 会被 Pansave 拦截并 302；
 	// base 不带 /emby 时直接命中这里，不至于 404。不影响 /emby/Videos 路由。
+	mux.HandleFunc("GET /Videos/{Id}/Subtitles/{Index}/Stream", s.auth(s.handleSubtitle))
+	mux.HandleFunc("HEAD /Videos/{Id}/Subtitles/{Index}/Stream", s.auth(s.handleSubtitle))
 	mux.HandleFunc("GET /Videos/{Id}/{Action}", s.auth(s.handleVideoAlias))
 	mux.HandleFunc("HEAD /Videos/{Id}/{Action}", s.auth(s.handleVideoAlias))
 	mux.HandleFunc("GET /emby/Library/MediaFolders", s.auth(s.handleMediaFolders))

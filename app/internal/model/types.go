@@ -70,9 +70,12 @@ type Person struct {
 
 // MediaSource 描述一个可播放来源。STRM 场景下 Path 即远端直链。
 type MediaSource struct {
-	Id        string `json:"Id"`
-	Name      string `json:"Name"`
-	Path      string `json:"Path"`
+	Id   string `json:"Id"`
+	Name string `json:"Name"`
+	Path string `json:"Path"`
+	// LocalPath 是扫描时的本地 .strm/媒体文件路径，不对外输出；
+	// Path 在响应前可能被换成远端直链，外挂字幕必须靠它定位同目录文件。
+	LocalPath string `json:"-"`
 	Container string `json:"Container,omitempty"`
 	// Protocol / IsRemote 是 Emby 标准字段：客户端用它们判断“要不要走服务端代理”。
 	// 网盘 STRM 直链 → Http/true；本地文件 → File/false。
@@ -105,11 +108,15 @@ type MediaStream struct {
 	BitDepth   int    `json:"BitDepth,omitempty"`
 	VideoRange string `json:"VideoRange,omitempty"` // SDR / HDR
 	// VideoRangeType 是 Emby/Jellyfin 的枚举：SDR / HDR10 / HLG / DOVI。
-	VideoRangeType   string  `json:"VideoRangeType,omitempty"`
-	ColorSpace       string  `json:"ColorSpace,omitempty"`
-	ColorTransfer    string  `json:"ColorTransfer,omitempty"`
-	ColorPrimaries   string  `json:"ColorPrimaries,omitempty"`
-	IsExternal       bool    `json:"IsExternal"`
+	VideoRangeType string `json:"VideoRangeType,omitempty"`
+	ColorSpace     string `json:"ColorSpace,omitempty"`
+	ColorTransfer  string `json:"ColorTransfer,omitempty"`
+	ColorPrimaries string `json:"ColorPrimaries,omitempty"`
+	IsExternal     bool   `json:"IsExternal"`
+	// DeliveryMethod / DeliveryUrl 是 Emby 外挂/可下载字幕的标准字段。
+	// 外挂字幕填 External + 服务端下载地址；内嵌字幕后续可复用同一套接口。
+	DeliveryMethod   string  `json:"DeliveryMethod,omitempty"`
+	DeliveryUrl      string  `json:"DeliveryUrl,omitempty"`
 	PixelFormat      string  `json:"PixelFormat,omitempty"`
 	AspectRatio      string  `json:"AspectRatio,omitempty"`
 	AverageFrameRate float32 `json:"AverageFrameRate,omitempty"`

@@ -1133,7 +1133,7 @@ func newMediaSource(itemName, sourceID, name, path, container, resolved string, 
 	}
 	target := cachedStrm(path, resolved)
 	src := model.MediaSource{
-		Id: sourceID, Name: label, Path: target,
+		Id: sourceID, Name: label, Path: target, LocalPath: path,
 		// Container 绝不能下发 "strm"：那是 Emby 里不存在的容器名，
 		// 客户端拿它去做解码/封装判断会直接失败。
 		Container:    realContainer(container, target, path),

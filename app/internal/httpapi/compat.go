@@ -172,6 +172,7 @@ func (s *Server) handleUserItem(w http.ResponseWriter, r *http.Request) {
 		}
 		it.Path = prettyURL(it.Path)
 		// 爆米花/Filmly 的详情页只认 MediaSources 里的 DirectStreamUrl（与 PlaybackInfo 一致）。
+		s.enrichItemSubtitles(r.Context(), it)
 		s.setPopcornItemStreamURLs(r, it)
 		var returned int64
 		uid := ""

@@ -76,6 +76,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request) {
 			Id:           it.Id,
 			Name:         it.Name,
 			Path:         it.Path,
+			LocalPath:    it.Path,
 			Container:    directContainer(target),
 			RunTimeTicks: it.RunTimeTicks,
 		}
@@ -86,6 +87,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request) {
 		}
 		sources = []model.MediaSource{src}
 	}
+	attachExternalSubtitles(sources, id)
 	popcorn := s.isPopcornClient(r)
 	out := make([]model.MediaSource, len(sources))
 	for i, ms := range sources {
