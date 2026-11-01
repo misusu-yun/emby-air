@@ -518,6 +518,22 @@ func (w *where) String() string {
 	return " WHERE " + strings.Join(w.sql, " AND ")
 }
 
+// onlyTopLevelTypes 判断请求是否只取媒体库的直接子级类型。
+// 空类型必须走递归（可能是“整个库”）；Season/Episode/Folder 等也可能嵌套。
+func onlyTopLevelTypes(types []string) bool {
+	if len(types) == 0 {
+		return false
+	}
+	for _, t := range types {
+		switch strings.ToLower(strings.TrimSpace(t)) {
+		case "movie", "series", "boxset", "collectionfolder":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // QueryItems 按查询参数分页返回条目。
 func (d *DB) QueryItems(ctx context.Context, q model.ItemsQuery) (model.Page, error) {
 	limit := q.Limit
@@ -529,8 +545,12 @@ func (d *DB) QueryItems(ctx context.Context, q model.ItemsQuery) (model.Page, er
 	}
 
 	var w where
+	// VidHub 打开媒体库时传 Recursive=true + IncludeItemTypes=Movie,Series。
+	// 这两类在媒体库里就是直接子级，没必要为它们展开 12 万行的递归 CTE
+	// （线上会从 1 秒级降到几十毫秒，海报请求不用等列表）。
+	directChildren := q.Recursive && onlyTopLevelTypes(q.Types)
 	if q.ParentId != "" {
-		if q.Recursive {
+		if q.Recursive && !directChildren {
 			// Emby 的 Recursive=true 要返回整棵子树（Series→Season→Episode），
 			// 不能只按 parent_id 取直接子级。
 			w.add("id IN (WITH RECURSIVE tree(id) AS ("+
@@ -546,7 +566,7 @@ func (d *DB) QueryItems(ctx context.Context, q model.ItemsQuery) (model.Page, er
 		for i, id := range q.AllowedParents {
 			args[i] = id
 		}
-		if q.Recursive {
+		if q.Recursive && !directChildren {
 			// 全局递归 + 库权限：只展开授权媒体库的整棵子树。
 			w.add("id IN (WITH RECURSIVE tree(id) AS ("+
 				"SELECT id FROM items WHERE parent_id IN ("+ph+") "+
