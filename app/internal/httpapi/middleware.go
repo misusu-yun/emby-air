@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -22,6 +23,7 @@ type handleRecorder struct {
 	http.ResponseWriter
 	status int
 	wrote  bool
+	bytes  int64
 }
 
 func (h *handleRecorder) WriteHeader(code int) {
@@ -37,7 +39,9 @@ func (h *handleRecorder) Write(b []byte) (int, error) {
 		h.status = http.StatusOK
 		h.wrote = true
 	}
-	return h.ResponseWriter.Write(b)
+	n, err := h.ResponseWriter.Write(b)
+	h.bytes += int64(n)
+	return n, err
 }
 
 // Unwrap 让 http.ResponseController 能拿到底层 Conn（Flush/Hijack 等）。
@@ -71,8 +75,12 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 			"method":      r.Method,
 			"path":        r.URL.Path,
 			"query_keys":  keys,
+			"image_query": imageQueryForLog(r.URL.Path, r.URL.RawQuery),
+			"auth":        userFrom(r) != nil,
 			"status":      rec.status,
 			"dur_ms":      float64(dur.Nanoseconds()) / 1e6,
+			"bytes":       rec.bytes,
+			"ctype":       rec.Header().Get("Content-Type"),
 			"ua":          truncateRunes(r.UserAgent(), 90),
 			"emby_client": truncateRunes(r.Header.Get("X-Emby-Client"), 40),
 		})
@@ -86,6 +94,29 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 			// 通道满时丢弃日志，绝不阻塞请求。
 		}
 	})
+}
+
+// imageQueryForLog 只记录图片请求的非敏感参数（tag/maxWidth 等），
+// 不记录 api_key/token；用于排查客户端实际拿到的图片 URL。
+func imageQueryForLog(path, raw string) map[string]string {
+	if !strings.Contains(strings.ToLower(path), "/images/") || raw == "" {
+		return nil
+	}
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return nil
+	}
+	allowed := map[string]bool{"tag": true, "maxwidth": true, "width": true, "height": true, "format": true}
+	out := make(map[string]string)
+	for k, vs := range values {
+		if allowed[strings.ToLower(k)] && len(vs) > 0 {
+			out[strings.ToLower(k)] = truncateRunes(vs[0], 120)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // queryKeys 只返回参数名（排序去重），值可能含敏感信息。
