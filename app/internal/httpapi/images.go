@@ -150,8 +150,8 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 	body, etag, ok := s.findImage(r, id, imgType, maxWidth)
 	// Moonfin 保持既有行为：maxWidth<=512 时缩到请求宽度。
 	thumbWidth := 0
-	if ok && isMoonfin(r) && maxWidth > 0 && maxWidth <= 512 && thumbableImageType(imgType) {
-		thumbWidth = maxWidth
+	if ok && isMoonfin(r) {
+		thumbWidth = moonfinThumbWidth(imgType, maxWidth)
 	}
 	// 爆米花/Filmly 拉图常常不带 maxWidth：海报缩到 480 省流量，但详情页背景图
 	// 同样被缩成 480 就极其模糊。这里按图片类型分流（0 = 不缩放，返回原图）。
@@ -302,6 +302,18 @@ func popcornClampThumbWidth(maxWidth, def, limit int) int {
 	return maxWidth
 }
 
+// moonfinThumbWidth 给 Moonfin 列表海报用 720px 高质量版本；
+// 小尺寸分集缩略图保持请求宽度，详情页（无 maxWidth）返回原图。
+func moonfinThumbWidth(imgType string, maxWidth int) int {
+	if !thumbableImageType(imgType) || maxWidth <= 0 || maxWidth > 512 {
+		return 0
+	}
+	if maxWidth >= 400 {
+		return 720
+	}
+	return maxWidth
+}
+
 // vidhubThumbWidth 只给 VidHub 的列表海报做高质量 720px 版本。
 // VidHub 列表会一次预取 50+ 张原图（常见 1~4MB），首屏容易超时变空白；
 // 720px 对海报墙足够清晰，详情页仍请求原图（不带 maxWidth 时不缩放）。
@@ -326,7 +338,7 @@ func vidhubCacheTag(tag string) string {
 }
 
 func bumpVidHubImageTags(r *http.Request, it *model.Item) {
-	if it == nil || !isVidHub(r) {
+	if it == nil || (!isVidHub(r) && !isMoonfin(r)) {
 		return
 	}
 	for k, v := range it.ImageTags {
@@ -342,7 +354,7 @@ func bumpVidHubImageTags(r *http.Request, it *model.Item) {
 }
 
 func bumpVidHubImageTagsInItems(r *http.Request, items []model.Item) {
-	if !isVidHub(r) {
+	if !isVidHub(r) && !isMoonfin(r) {
 		return
 	}
 	for i := range items {
@@ -595,8 +607,8 @@ func (s *Server) handleHeadImage(w http.ResponseWriter, r *http.Request) {
 	body, etag, ok := s.findImage(r, id, imgType, maxWidth)
 	// HEAD 必须与 GET 的 body 长度一致，否则客户端预检会误判。
 	thumbWidth := 0
-	if ok && isMoonfin(r) && maxWidth > 0 && maxWidth <= 512 && thumbableImageType(imgType) {
-		thumbWidth = maxWidth
+	if ok && isMoonfin(r) {
+		thumbWidth = moonfinThumbWidth(imgType, maxWidth)
 	}
 	if ok && s.isPopcornClient(r) {
 		thumbWidth = popcornThumbWidth(imgType, maxWidth)
