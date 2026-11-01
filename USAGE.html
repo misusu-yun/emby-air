@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>emby-air Docker 测试版 · 使用教程</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#fff; --text:#1f2933; --muted:#64748b;
+    --line:#e2e8f0; --accent:#1769aa; --accent2:#e8f2fb;
+    --code:#0f172a; --codeText:#dbeafe; --warn:#8a5a00; --warnBg:#fff7e6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  header{background:linear-gradient(135deg,#0f2742,#1769aa);color:#fff;padding:42px 22px}
+  header .wrap{max-width:980px;margin:auto}
+  h1{margin:0 0 8px;font-size:30px;letter-spacing:.5px}
+  header p{margin:0;color:#d7e8f7}
+  main{max-width:980px;margin:28px auto;padding:0 20px 60px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:22px 24px;margin:18px 0;box-shadow:0 2px 10px #0f172a0a}
+  h2{font-size:21px;margin:0 0 12px;color:#0f2742;border-left:4px solid var(--accent);padding-left:10px}
+  h3{font-size:17px;margin:22px 0 8px;color:#183b5b}
+  p{margin:8px 0}
+  ul,ol{padding-left:22px;margin:8px 0}
+  li{margin:4px 0}
+  code{background:#eef2f7;padding:2px 5px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  pre{background:var(--code);color:var(--codeText);padding:14px 16px;border-radius:8px;overflow:auto;line-height:1.55;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+  pre code{background:none;padding:0;color:inherit}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#f1f5f9;white-space:nowrap}
+  .note,.warn{border-radius:8px;padding:12px 14px;margin:12px 0}
+  .note{background:var(--accent2);border-left:4px solid var(--accent)}
+  .warn{background:var(--warnBg);border-left:4px solid #d99a1b;color:var(--warn)}
+  .muted{color:var(--muted)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .step{display:flex;gap:12px;margin:12px 0}
+  .num{flex:0 0 30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:700}
+  footer{max-width:980px;margin:0 auto 40px;padding:0 20px;color:var(--muted);font-size:13px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>emby-air Docker 测试版</h1>
+    <p>扫描 STRM、TMDB 刮削、Web 管理、兼容常见 Emby 客户端</p>
+  </div>
+</header>
+<main>
+
+<section>
+  <h2>重要说明</h2>
+  <div class="warn">
+    本项目包含 AI 辅助生成/修改的代码和文档，可能存在错误或安全风险；使用前请自行审查和测试。详见仓库中的
+    <code>AI-DISCLOSURE.md</code>。
+  </div>
+  <div class="note">
+    emby-air 是非官方项目，与 Emby LLC、TMDB、Pansave 没有隶属或背书关系。使用者需要自行确保媒体内容、
+    TMDB API 和部署环境的使用合法；详见 <code>LEGAL.md</code> 和 <code>LICENSE</code>。
+  </div>
+</section>
+
+<section>
+  <h2>1. 准备条件</h2>
+  <ul>
+    <li>一台安装了 Docker Engine 或 Docker Desktop 的机器；</li>
+    <li>Docker Compose v2（使用 <code>docker compose</code> 命令）；</li>
+    <li>一个媒体目录，里面可以是 <code>.strm</code> 文件或视频文件；</li>
+    <li>可选：TMDB API Key，用于自动获取简介、海报和分集信息。</li>
+  </ul>
+  <div class="note">
+    第一次启动必须先设置一个管理员密码。不要把默认密码直接暴露到公网。
+  </div>
+</section>
+
+<section>
+  <h2>2. 目录结构</h2>
+  <p>解压后应该是这样的结构：</p>
+<pre><code>emby-air-docker/
+├── Dockerfile
+├── docker-compose.yml
+├── .env.example
+├── README.md
+├── 使用教程.html
+└── app/
+    ├── go.mod
+    ├── go.sum
+    ├── cmd/
+    └── internal/</code></pre>
+  <p>不需要安装 Go，Docker 会在构建镜像时编译源码。</p>
+</section>
+
+<section>
+  <h2>3. 创建配置文件</h2>
+  <p>在项目根目录执行：</p>
+<pre><code>cp .env.example .env</code></pre>
+  <p>然后编辑 <code>.env</code>。至少需要改这几项：</p>
+  <table>
+    <thead><tr><th>配置项</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>MEDIA_PATH</code></td><td>宿主机上的媒体目录，例如 <code>/mnt/media</code> 或 <code>D:\Media</code></td></tr>
+      <tr><td><code>DATA_PATH</code></td><td>数据库和缓存目录，默认 <code>./data</code>，不要放在临时目录</td></tr>
+      <tr><td><code>ADMIN_PASSWORD</code></td><td>首次启动的管理员密码，请设置一个强密码</td></tr>
+      <tr><td><code>TMDB_API_KEY</code></td><td>可留空，启动后到 Web「设置」里填写也可以</td></tr>
+    </tbody>
+  </table>
+  <p>示例：</p>
+<pre><code>MEDIA_PATH=/mnt/media
+DATA_PATH=./data
+ADMIN_USER=admin
+ADMIN_PASSWORD=换成一个强密码
+TMDB_API_KEY=
+TZ=Asia/Shanghai</code></pre>
+  <div class="warn">
+    <code>.env</code> 里可能包含密码和 API Key，不要提交到 Git，也不要直接发给别人。
+  </div>
+</section>
+
+<section>
+  <h2>4. 启动</h2>
+  <div class="step"><div class="num">1</div><div>构建并启动容器：</div></div>
+<pre><code>docker compose up -d --build</code></pre>
+  <div class="step"><div class="num">2</div><div>查看启动日志：</div></div>
+<pre><code>docker compose logs -f --tail=100</code></pre>
+  <div class="step"><div class="num">3</div><div>看到类似 <code>HTTP 服务已监听 :8098</code> 即启动成功。</div></div>
+  <div class="step"><div class="num">4</div><div>打开浏览器：</div></div>
+<pre><code>http://宿主机IP:8098/webui</code></pre>
+  <p>如果就在本机测试，可以使用 <code>http://127.0.0.1:8098/webui</code>。</p>
+</section>
+
+<section>
+  <h2>5. 在 Web 里添加媒体库</h2>
+  <ol>
+    <li>登录 Web 管理端；</li>
+    <li>进入「媒体库」；</li>
+    <li>填写名称，选择类型（电影 / 剧集）；</li>
+    <li>选择容器内路径。容器里的媒体根目录固定是 <code>/media</code>；</li>
+    <li>创建后点击扫描，或在任务中心查看扫描进度。</li>
+  </ol>
+  <div class="note">
+    宿主机目录通过 <code>MEDIA_PATH:/media</code> 挂载。Web 里选择的是容器内路径，例如
+    <code>/media/电影</code>，不是宿主机的绝对路径。
+  </div>
+</section>
+
+<section>
+  <h2>6. Web 设置页</h2>
+  <p>登录后进入「设置」，可以直接修改以下内容，不需要重建容器：</p>
+  <table>
+    <thead><tr><th>设置</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>TMDB API Key</td><td>保存后不会回显；留空表示不修改，勾选清除可删除</td></tr>
+      <tr><td>TMDB 语言</td><td>例如 <code>zh-CN</code>、<code>en-US</code></td></tr>
+      <tr><td>HTTP/HTTPS 代理</td><td>例如 <code>http://proxy-host:7890</code>；留空表示不使用</td></tr>
+      <tr><td>NO_PROXY</td><td>不走代理的地址，例如 <code>localhost,127.0.0.1</code></td></tr>
+      <tr><td>刮削速率</td><td><code>1–15 req/s</code>，建议 8–15</td></tr>
+      <tr><td>扫描后自动刮削</td><td>扫描完成后自动补 TMDB 元数据</td></tr>
+      <tr><td>写 NFO</td><td>把元数据写入 NFO 文件；要求媒体目录可写</td></tr>
+    </tbody>
+  </table>
+  <p><b>生效规则：</b>保存后新任务立即使用新配置；正在运行的任务继续使用旧配置。</p>
+  <p>设置保存在 <code>data/emby.db</code>，容器重启或重建后仍然保留。环境变量只作为首次启动的默认值。</p>
+</section>
+
+<section>
+  <h2>7. 用 Emby 客户端连接</h2>
+  <p>在 VidHub、Infuse、Moonfin 等客户端里添加服务器：</p>
+<pre><code>http://宿主机IP:8098</code></pre>
+  <p>账号密码使用 Web 管理员账号，或你在 Web 里创建的用户账号。</p>
+  <div class="note">
+    媒体目录默认以只读方式挂载。只读模式可以正常扫描和播放，但不能在 Web 里删除媒体或写入 NFO。
+    如果需要测试这些功能，把 <code>docker-compose.yml</code> 里的 <code>/media:ro</code> 改为 <code>/media:rw</code>。
+  </div>
+</section>
+
+<section>
+  <h2>8. 常用 Docker 命令</h2>
+  <div class="grid">
+    <div>
+      <h3>日常</h3>
+<pre><code>docker compose ps
+docker compose logs -f --tail=100
+docker compose restart
+docker compose down</code></pre>
+    </div>
+    <div>
+      <h3>重新构建</h3>
+<pre><code>docker compose build --no-cache
+docker compose up -d</code></pre>
+    </div>
+  </div>
+  <h3>备份数据</h3>
+  <p>先停止容器，再复制整个 <code>data/</code> 目录：</p>
+<pre><code>docker compose down
+cp -a data data.backup
+docker compose up -d</code></pre>
+</section>
+
+<section>
+  <h2>9. 常见问题</h2>
+  <h3>打开 8098 没有响应</h3>
+  <ul>
+    <li>确认容器在运行：<code>docker compose ps</code>；</li>
+    <li>看日志：<code>docker compose logs --tail=100</code>；</li>
+    <li>确认宿主机防火墙放行 8098，或改 <code>.env</code> 里的 <code>PORT</code>。</li>
+  </ul>
+
+  <h3>扫描不到媒体</h3>
+  <ul>
+    <li>确认 <code>MEDIA_PATH</code> 指向真实目录；</li>
+    <li>进入容器检查：<code>docker compose exec emby-air ls /media</code>；</li>
+    <li>Web 里添加媒体库时使用容器内路径 <code>/media/...</code>；</li>
+    <li>标题目录名最好包含年份或 <code>{tmdb-xxxx}</code>，便于识别。</li>
+  </ul>
+
+  <h3>刮削没有内容 / TMDB 超时</h3>
+  <ul>
+    <li>到「设置」检查 TMDB Key；</li>
+    <li>国内网络可能需要填写 HTTP/HTTPS 代理；</li>
+    <li>降低刮削速率到 8–10 再试；</li>
+    <li>查看日志中的 TMDB 鉴权或超时提示。</li>
+  </ul>
+
+  <h3>忘记管理员密码</h3>
+  <p>可以停止容器后备份并删除 <code>data/emby.db</code>，再重新启动初始化；这会清空数据库，请先备份。</p>
+
+  <h3>媒体文件权限错误</h3>
+  <p>Linux/NAS 上请保证 Docker 进程对媒体目录至少可读。如果要写 NFO 或删除媒体，还需要可写权限。</p>
+</section>
+
+<section>
+  <h2>10. 安全建议</h2>
+  <ul>
+    <li>不要把 8098 直接暴露到公网；建议放在反向代理、VPN 或内网后面；</li>
+    <li>首次登录后立即修改管理员密码；</li>
+    <li>不要使用 <code>change-me</code> 这类默认密码；</li>
+    <li><code>.env</code>、<code>data/</code>、数据库和 API Key 不要发给无关人员；</li>
+    <li>测试结束需要彻底清理时，删除容器和 <code>data/</code> 即可，媒体文件不会被动。</li>
+  </ul>
+</section>
+
+</main>
+<footer>
+  <p>emby-air Docker 测试版 · 配置模板以 <code>.env.example</code> 和 <code>docker-compose.yml</code> 内的注释为准。</p>
+  <p>AI 开发说明：<code>AI-DISCLOSURE.md</code> · 法律声明：<code>LEGAL.md</code> · 许可证：<code>LICENSE</code>（MIT）</p>
+</footer>
+</body>
+</html>

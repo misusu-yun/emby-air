@@ -1,0 +1,17 @@
+# Runtime data, configuration, docs and VCS metadata stay out of the image context.
+.git
+.gitignore
+.env
+.env.*
+data/
+*.db
+*.db-shm
+*.db-wal
+*.bak
+.DS_Store
+README.md
+USAGE.html
+LEGAL.md
+AI-DISCLOSURE.md
+LICENSE
+*.zip

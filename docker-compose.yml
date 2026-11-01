@@ -1,0 +1,69 @@
+# ============================================================
+# emby-air · Docker Compose
+#
+# 用法：
+#   1. cp .env.example .env
+#   2. 编辑 .env：至少设置 MEDIA_PATH、DATA_PATH、ADMIN_PASSWORD
+#   3. docker compose up -d --build
+#   4. 浏览器打开 http://NAS_IP:8098/webui
+#
+# 提示：
+#   - TMDB Key、代理、刮削速率也可以在 Web「设置」里修改；
+#   - Web 设置保存在 data/emby.db，容器重建后仍然保留；
+#   - 环境变量只作为首次启动的默认值。
+# ============================================================
+services:
+  emby-air:
+    build: .
+    image: emby-air:test
+    container_name: emby-air
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+
+    # 宿主机端口 -> 容器端口（容器内固定 8098）
+    ports:
+      - "${PORT:-8098}:8098"
+
+    environment:
+      TZ: "${TZ:-Asia/Shanghai}"
+      PORT: "8098"
+      DATA_DIR: /data
+      MEDIA_ROOT: /media
+      SERVER_NAME: "${SERVER_NAME:-emby-air}"
+
+      # 初始管理员：只在用户不存在时创建，不会覆盖已有密码
+      ADMIN_USER: "${ADMIN_USER:-admin}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-change-me}"
+
+      # TMDB / 刮削默认值；可在 Web 设置页覆盖
+      TMDB_API_KEY: "${TMDB_API_KEY:-}"
+      TMDB_LANG: "${TMDB_LANG:-zh-CN}"
+      SCRAPE_RATE: "${SCRAPE_RATE:-15}"
+      AUTO_SCRAPE: "${AUTO_SCRAPE:-1}"
+      NFO_WRITE: "${NFO_WRITE:-0}"
+
+      # 代理（可选；Web 设置页也可以填写）
+      # HTTP_PROXY: "${HTTP_PROXY:-}"
+      # HTTPS_PROXY: "${HTTPS_PROXY:-}"
+      # NO_PROXY: "${NO_PROXY:-localhost,127.0.0.1}"
+
+      # 低配 NAS 建议设置；GOMEMLIMIT 保护 Go 堆，Docker mem_limit 控制总内存
+      GOGC: "${GOGC:-50}"
+      GOMEMLIMIT: "${GOMEMLIMIT:-160MiB}"
+
+    volumes:
+      # 数据：SQLite、图片缓存、日志，必须持久化
+      - "${DATA_PATH:-./data}:/data"
+
+      # 媒体：默认只读，避免测试人员误删文件
+      # 如需测试删除影片/写 NFO，把 :ro 改成 :rw
+      - "${MEDIA_PATH:-./media}:/media:ro"
+
+    mem_limit: "${MEM_LIMIT:-512m}"
+
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/emby-air", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
