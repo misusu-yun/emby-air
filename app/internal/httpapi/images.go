@@ -158,6 +158,9 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 	if ok && s.isPopcornClient(r) {
 		thumbWidth = popcornThumbWidth(imgType, maxWidth)
 	}
+	if ok && isVidHub(r) {
+		thumbWidth = vidhubThumbWidth(imgType, maxWidth)
+	}
 	if thumbWidth > 0 {
 		if thumb, changed := s.clientThumb(body, id, imgType, thumbWidth); changed {
 			body = thumb
@@ -296,6 +299,31 @@ func popcornClampThumbWidth(maxWidth, def, limit int) int {
 		return limit
 	}
 	return maxWidth
+}
+
+// vidhubThumbWidth 是 VidHub 列表海报的缩略宽度：
+// VidHub 不带 maxWidth 时用 720px，显式请求时按请求宽度但不超过 1024px；
+// 背景图保持清晰度，不带 maxWidth 时不缩放。
+func vidhubThumbWidth(imgType string, maxWidth int) int {
+	switch strings.ToLower(strings.TrimSpace(imgType)) {
+	case "", "primary", "poster", "thumb":
+		if maxWidth <= 0 {
+			return 720
+		}
+		if maxWidth > 1024 {
+			return 1024
+		}
+		return maxWidth
+	case "backdrop", "background", "fanart":
+		if maxWidth <= 0 {
+			return 0
+		}
+		if maxWidth > 1920 {
+			return 1920
+		}
+		return maxWidth
+	}
+	return 0
 }
 
 func writePlaceholderPNG(w http.ResponseWriter, r *http.Request, png []byte, isHead bool) {
@@ -548,6 +576,9 @@ func (s *Server) handleHeadImage(w http.ResponseWriter, r *http.Request) {
 	}
 	if ok && s.isPopcornClient(r) {
 		thumbWidth = popcornThumbWidth(imgType, maxWidth)
+	}
+	if ok && isVidHub(r) {
+		thumbWidth = vidhubThumbWidth(imgType, maxWidth)
 	}
 	if thumbWidth > 0 {
 		if thumb, changed := s.clientThumb(body, id, imgType, thumbWidth); changed {
