@@ -185,6 +185,7 @@ func (s *Server) handleUserItem(w http.ResponseWriter, r *http.Request) {
 		}
 		// ChildCount/RecursiveItemCount/UserData 必须齐：Filmly 缺字段会直接回首页。
 		s.ensureDetailShape(r, it)
+		bumpVidHubImageTags(r, it)
 		s.trace.add(map[string]any{
 			"ts": time.Now().UnixMilli(), "path": "/itemDetail",
 			"item": it.Name, "user": uid, "returned": returned,

@@ -158,6 +158,9 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 	if ok && s.isPopcornClient(r) {
 		thumbWidth = popcornThumbWidth(imgType, maxWidth)
 	}
+	if ok && isVidHub(r) {
+		thumbWidth = vidhubThumbWidth(imgType, maxWidth)
+	}
 	if thumbWidth > 0 {
 		if thumb, changed := s.clientThumb(body, id, imgType, thumbWidth); changed {
 			body = thumb
@@ -297,6 +300,54 @@ func popcornClampThumbWidth(maxWidth, def, limit int) int {
 		return limit
 	}
 	return maxWidth
+}
+
+// vidhubThumbWidth 只给 VidHub 的列表海报做高质量 720px 版本。
+// VidHub 列表会一次预取 50+ 张原图（常见 1~4MB），首屏容易超时变空白；
+// 720px 对海报墙足够清晰，详情页仍请求原图（不带 maxWidth 时不缩放）。
+func vidhubThumbWidth(imgType string, maxWidth int) int {
+	switch strings.ToLower(strings.TrimSpace(imgType)) {
+	case "", "primary", "poster", "thumb":
+		if maxWidth > 0 && maxWidth <= 512 {
+			return 720
+		}
+	}
+	return 0
+}
+
+// vidhubCacheTag 生成一个标准 16 位 hex tag（不是 "-vh3" 这种非标准后缀），
+// 用来让已经缓存了首屏空白占位图的 VidHub 重新请求。服务端不使用 tag 查询图片。
+func vidhubCacheTag(tag string) string {
+	if tag == "" {
+		return tag
+	}
+	sum := sha1.Sum([]byte(tag + "-vh4"))
+	return hex.EncodeToString(sum[:8])
+}
+
+func bumpVidHubImageTags(r *http.Request, it *model.Item) {
+	if it == nil || !isVidHub(r) {
+		return
+	}
+	for k, v := range it.ImageTags {
+		if v != "" {
+			it.ImageTags[k] = vidhubCacheTag(v)
+		}
+	}
+	for i, v := range it.BackdropImageTags {
+		if v != "" {
+			it.BackdropImageTags[i] = vidhubCacheTag(v)
+		}
+	}
+}
+
+func bumpVidHubImageTagsInItems(r *http.Request, items []model.Item) {
+	if !isVidHub(r) {
+		return
+	}
+	for i := range items {
+		bumpVidHubImageTags(r, &items[i])
+	}
 }
 
 func writePlaceholderPNG(w http.ResponseWriter, r *http.Request, png []byte, isHead bool) {
@@ -550,6 +601,9 @@ func (s *Server) handleHeadImage(w http.ResponseWriter, r *http.Request) {
 	if ok && s.isPopcornClient(r) {
 		thumbWidth = popcornThumbWidth(imgType, maxWidth)
 	}
+	if ok && isVidHub(r) {
+		thumbWidth = vidhubThumbWidth(imgType, maxWidth)
+	}
 	if thumbWidth > 0 {
 		if thumb, changed := s.clientThumb(body, id, imgType, thumbWidth); changed {
 			body, etag = thumb, ""
@@ -622,6 +676,53 @@ func (s *Server) ensureStillImage(ctx context.Context, itemID string) ([]byte, b
 	return body, true
 }
 
+// resizeBilinear 用双线性插值缩放，避免最近邻采样在海报上产生明显锯齿/脏边。
+func resizeBilinear(src image.Image, w, h int) *image.RGBA {
+	b := src.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		fy := (float64(y)+0.5)*float64(b.Dy())/float64(h) - 0.5
+		y0 := int(fy)
+		if y0 < 0 {
+			y0 = 0
+		}
+		y1 := y0 + 1
+		if y1 >= b.Dy() {
+			y1 = b.Dy() - 1
+		}
+		wy := fy - float64(y0)
+		if wy < 0 {
+			wy = 0
+		}
+		for x := 0; x < w; x++ {
+			fx := (float64(x)+0.5)*float64(b.Dx())/float64(w) - 0.5
+			x0 := int(fx)
+			if x0 < 0 {
+				x0 = 0
+			}
+			x1 := x0 + 1
+			if x1 >= b.Dx() {
+				x1 = b.Dx() - 1
+			}
+			wx := fx - float64(x0)
+			if wx < 0 {
+				wx = 0
+			}
+			r00, g00, b00, a00 := src.At(b.Min.X+x0, b.Min.Y+y0).RGBA()
+			r10, g10, b10, a10 := src.At(b.Min.X+x1, b.Min.Y+y0).RGBA()
+			r01, g01, b01, a01 := src.At(b.Min.X+x0, b.Min.Y+y1).RGBA()
+			r11, g11, b11, a11 := src.At(b.Min.X+x1, b.Min.Y+y1).RGBA()
+			lerp := func(v00, v10, v01, v11 uint32) uint8 {
+				top := float64(v00)*(1-wx) + float64(v10)*wx
+				bot := float64(v01)*(1-wx) + float64(v11)*wx
+				return uint8((top*(1-wy) + bot*wy) / 257)
+			}
+			dst.SetRGBA(x, y, color.RGBA{lerp(r00, r10, r01, r11), lerp(g00, g10, g01, g11), lerp(b00, b10, b01, b11), lerp(a00, a10, a01, a11)})
+		}
+	}
+	return dst
+}
+
 // clientThumb 按 maxWidth 生成并缓存缩略图（Moonfin / 爆米花请求共用）。
 // 原始海报常有 350KB~1.1MB，首页几十张图在隧道上就是数 MB；缩略图约 10~20KB。
 func (s *Server) clientThumb(body []byte, id, imgType string, maxWidth int) ([]byte, bool) {
@@ -651,15 +752,7 @@ func (s *Server) clientThumb(body []byte, id, imgType string, maxWidth int) ([]b
 	if h <= 0 {
 		return body, false
 	}
-	dst := image.NewRGBA(image.Rect(0, 0, w, h))
-	// 最近邻采样：缩略图尺寸小，速度优先，避免引入额外的图像库依赖。
-	for y := 0; y < h; y++ {
-		sy := b.Min.Y + y*b.Dy()/h
-		for x := 0; x < w; x++ {
-			sx := b.Min.X + x*b.Dx()/w
-			dst.Set(x, y, src.At(sx, sy))
-		}
-	}
+	dst := resizeBilinear(src, w, h)
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 82}); err != nil {
 		return body, false
