@@ -166,6 +166,12 @@ func isMoonfin(r *http.Request) bool {
 
 // isFilmly 判断 Filmly 客户端。与 isPopcornClient 一样基于 clientSignature
 // （已做 UA 解码），不只匹配 User-Agent：Filmly 也可能只在 X-Emby-Client 里标识自己。
+// isVidHub 判断 VidHub。电视版对 MediaSources 的处理与手机/桌面版不同，
+// 需要服务端提供可访问的 DirectStreamUrl 和正确的流标题。
+func isVidHub(r *http.Request) bool {
+	return strings.Contains(clientSignature(r), "vidhub")
+}
+
 func isFilmly(r *http.Request) bool {
 	return strings.Contains(clientSignature(r), "filmly")
 }

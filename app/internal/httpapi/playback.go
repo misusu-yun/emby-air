@@ -101,10 +101,9 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request) {
 		ms.Container = mediaContainer(ms.Container, ms.Path)
 		out[i] = ms
 	}
-	if popcorn {
-		// 桌面版更依赖 Emby 的标准字段 DirectStreamUrl；与详情/列表用同一 helper：
-		// Filmly 得到 /Videos/...（拼 base 后为 /emby/Videos/...，由 Pansave 302），
-		// 其它爆米花仍得到 /emby/Videos/...。
+	if popcorn || isVidHub(r) {
+		// 爆米花和 VidHub 电视版都需要标准 DirectStreamUrl；
+		// Filmly 仍按自己的前缀规则，VidHub 使用 /emby/Videos/...。
 		fillDirectStreamURLs(r, out, id)
 	}
 
@@ -219,7 +218,9 @@ func (s *Server) handleVideoStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 网易爆米花对 302 的处理不稳定：可配置成由服务端代理直链（流式转发，不缓存整段）。
-	if s.cfg.PopcornProxyStream && s.isPopcornClient(r) {
+	if (s.cfg.PopcornProxyStream && s.isPopcornClient(r)) || isVidHub(r) {
+		// VidHub 电视版无法访问容器内的 127.0.0.1 直链，改为服务端代理；
+		// Range/206 由 proxyStream 透传。
 		s.proxyStream(w, r, target)
 		return
 	}

@@ -3773,6 +3773,11 @@ func (d *DB) OptimizeStats(ctx context.Context) error {
 func streamsForSource(name, path string) []model.MediaStream {
 	hay := strings.ToLower(name + " " + path)
 	vs := model.MediaStream{Index: 0, Type: "Video", IsDefault: true}
+	// 版本标签放进标准流标题，避免 VidHub 电视版回退到文件名。
+	if strings.TrimSpace(name) != "" {
+		vs.Title = name
+		vs.DisplayTitle = name
+	}
 	switch {
 	case strings.Contains(hay, "h265") || strings.Contains(hay, "hevc") || strings.Contains(hay, "265"):
 		vs.Codec = "hevc"

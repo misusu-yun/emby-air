@@ -266,7 +266,7 @@ func (s *Server) wantsMediaSources(r *http.Request, fields []string) bool {
 // 线上现象：Filmly 拿到详情/列表的 MediaSources 后不再请求 PlaybackInfo 的后续播放地址，
 // 缺 DirectStreamUrl 时它没有可播地址。其它客户端完全不改（VidHub 的 Path 也不动）。
 func (s *Server) setPopcornStreamURLs(r *http.Request, items []model.Item) {
-	if !s.isPopcornClient(r) || len(items) == 0 {
+	if (!s.isPopcornClient(r) && !isVidHub(r)) || len(items) == 0 {
 		return
 	}
 	for i := range items {
@@ -276,10 +276,11 @@ func (s *Server) setPopcornStreamURLs(r *http.Request, items []model.Item) {
 
 // setPopcornItemStreamURLs 是单条版本（详情页入口用）。
 func (s *Server) setPopcornItemStreamURLs(r *http.Request, it *model.Item) {
-	if it == nil || !s.isPopcornClient(r) {
+	if it == nil || (!s.isPopcornClient(r) && !isVidHub(r)) {
 		return
 	}
 	fillDirectStreamURLs(r, it.MediaSources, it.Id)
+	// 只对 Filmly 做分辨率实验，VidHub 保留真实分辨率。
 	stripFilmlyResolution(r, it.MediaSources)
 }
 
@@ -318,6 +319,11 @@ func fillDirectStreamURLs(r *http.Request, sources []model.MediaSource, itemID s
 			continue
 		}
 		sources[i].DirectStreamUrl = prefix + "/Videos/" + itemID + "/stream?Static=true&MediaSourceId=" + url.QueryEscape(sources[i].Id)
+		// VidHub 电视版可能优先使用 Path；把 Path 也换成服务端流地址，
+		// 避免它直接访问容器内的 127.0.0.1 直链。
+		if isVidHub(r) {
+			sources[i].Path = sources[i].DirectStreamUrl
+		}
 	}
 }
 
